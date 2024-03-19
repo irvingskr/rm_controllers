@@ -46,6 +46,7 @@
 #include <rm_common/hardware_interface/robot_state_interface.h>
 #include <rm_common/eigen_types.h>
 #include <rm_common/ros_utilities.h>
+#include "rm_gimbal_controllers/bullet_solver/target_kinematics_model.h"
 
 namespace rm_gimbal_controllers
 {
@@ -55,15 +56,25 @@ struct Config
       resistance_coff_qd_30, g, delay, dt, timeout;
 };
 
+enum class SelectedArmor
+{
+  FRONT = 0,
+  LEFT = 1,
+  BACK = 2,
+  RIGHT = 3
+};
+
 class BulletSolver
 {
 public:
   explicit BulletSolver(ros::NodeHandle& controller_nh);
-
-  bool solve(geometry_msgs::Point pos, geometry_msgs::Vector3 vel, double bullet_speed, double yaw, double v_yaw,
+  // normal target(including robots and buildings)
+  void input(geometry_msgs::Point pos, geometry_msgs::Vector3 vel, double bullet_speed, double yaw, double v_yaw,
              double r1, double r2, double dz, int armors_num);
-  double getGimbalError(geometry_msgs::Point pos, geometry_msgs::Vector3 vel, double yaw, double v_yaw, double r1,
-                        double r2, double dz, int armors_num, double yaw_real, double pitch_real, double bullet_speed);
+  // windmill
+  void input(double theta, double theta_dot, double bullet_speed, geometry_msgs::TransformStamped windmill2odom);
+  bool solve();
+  double getGimbalError(double yaw_real, double pitch_real);
   double getResistanceCoefficient(double bullet_speed) const;
   double getYaw() const
   {
@@ -73,9 +84,8 @@ public:
   {
     return -output_pitch_;
   }
-  void getSelectedArmorPosAndVel(geometry_msgs::Point& armor_pos, geometry_msgs::Vector3& armor_vel,
-                                 geometry_msgs::Point pos, geometry_msgs::Vector3 vel, double yaw, double v_yaw,
-                                 double r1, double r2, double dz, int armors_num);
+  void getYawVelAndAccelDes(double& vel_des, double& accel_des);
+  void getPitchVelAndAccelDes(double& vel_des, double& accel_des);
   void bulletModelPub(const geometry_msgs::TransformStamped& odom2pitch, const ros::Time& time);
   void reconfigCB(rm_gimbal_controllers::BulletSolverConfig& config, uint32_t);
   ~BulletSolver() = default;
@@ -89,10 +99,14 @@ private:
   double max_track_target_vel_;
   bool dynamic_reconfig_initialized_{};
   double output_yaw_{}, output_pitch_{};
+  double last_pitch_vel_des_{};
+  ros::Time last_pitch_vel_des_solve_time_{ 0 };
   double bullet_speed_{}, resistance_coff_{};
-  int selected_armor_;
+  double windmill_radius_;
+  SelectedArmor selected_armor_;
   bool track_target_;
 
+  std::shared_ptr<TargetKinematicsBase> target_kinematics_;
   geometry_msgs::Point target_pos_{};
   double fly_time_;
   visualization_msgs::Marker marker_desire_;
